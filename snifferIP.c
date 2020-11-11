@@ -52,10 +52,14 @@ int lectura_buffer = 1;		//Simula semaforo de procesos
 
 //Estructura para contar paquetes por cada direccion IP
 typedef struct userIP{
-	
+	char direccion_origen[16];
+	char direccion_Destino[16];
 	int paquetes_recibidos;
 	int paquetes_enviados;
-}
+
+	struct snifferIP *apSiguiente;
+	
+}userIP;
 
 //Archivo para guardar los datos
 FILE *Archivo;
@@ -140,6 +144,8 @@ void IdProtocolo (uint16_t proto, int tipo){
 	}
 }
 
+
+
 //FUncion para revisar los protocolos de capa superior en la cabecera IPv4
 void conteoProtocolIP(uint8_t protocolo)
 {
@@ -148,41 +154,59 @@ void conteoProtocolIP(uint8_t protocolo)
 	{
 		case 1:  //ICMP Protocol
 			ICMP++;
-			printf("Protocol ICMP\n");
+			fprintf(Archivo,"Protocol ICMP\n");
 			break;
 		case 2:  //IGMP Protocol
 			IGMP++;
-            printf("Protocol IGMP\n");
+            fprintf(Archivo,"Protocol IGMP\n");
 			break;
 		case 4: //IP Protocol
             IP++;
-            printf("Protocol IP\n");
+            fprintf(Archivo,"Protocol IP\n");
             break;
 		case 6:  //TCP Protocol
 			TCP++;
-            printf("Protocol TCP\n");
+            fprintf(Archivo,"Protocol TCP\n");
 			break;
 		case 17: //UDP Protocol
 			UDP++;
-            printf("Protocol UDP\n");
+            fprintf(Archivo,"Protocol UDP\n");
 			break;
 		case 41: //IPv6 Protocol
             IPv6++;
-            printf("Protocol IPv6\n");
+            fprintf(Archivo,"Protocol IPv6\n");
             break;
         case 89:   //OSPF Protocol
             OSPF++;
-            printf("Protocol OSPF\n");
+            fprintf(Archivo,"Protocol OSPF\n");
             break;
 		default: //Some Other Protocol like ARP etc.
 			otros++;
-            printf("Protocol Others...\n");
+            fprintf(Archivo,"Protocol Others...\n");
     }
     
 
 }
+//Funcion de Conteo de Tamanios de IPv4
+void conteoTamanio(int longitudTotal){
 
-
+	if (longitudTotal >= 0 && longitudTotal < 160)
+	{
+		tamanio159++;
+	}else if (longitudTotal >= 160 && longitudTotal < 640)
+	{
+		tamanio639++;
+	}else if (longitudTotal >= 640 && longitudTotal < 1280)
+	{
+		tamanio1279++;
+	}else if (longitudTotal >= 1280 && longitudTotal < 5120)
+	{
+		tamanio5119++;
+	}else if (longitudTotal >= 5120)
+	{
+		tamaniomay++;
+	}
+}
 
 
 //Funcion que estara Capturando los Datos
@@ -249,8 +273,10 @@ void analizador(struct datosUser *datosP){
 	uint16_t protocolo;
 	int num802=0;
 	int ethernetII=datosP->num_paquetes;
-    char auxbuffer[MAXLINE];//Buffer de ayuda momentaneo
+    char auxbufferIP[MAXLINE];//Buffer de ayuda momentaneo
 	int cargautilIP=0;
+	int recorrer=0;
+	int m=0;
 	
 
 	
@@ -284,7 +310,10 @@ void analizador(struct datosUser *datosP){
                 
                 if(protocolo == 2048){
                     printf("\nTrama %d: %s\nPayload: %d\n",j+1,buffer[j],tamanios[j]);
-                }				
+					
+                }else{
+					tamanios[j]=0;
+				}				
 				
 			}
 			j++;
@@ -301,7 +330,19 @@ void analizador(struct datosUser *datosP){
                 //Comenzamos a analizar la trama IPv4, que es el payload de ethernet
                 tramaip = (struct iphdr *)(buffer[j] + sizeof(struct ethhdr)); //Estructura para ahorita XD
                 //Se apunta en el encapsulado del datagrama IP, saltar 14 bytes que tienen la cabecera ETHERNET
-                //
+                //Hacemos buffer auxiliar IP
+				recorrer=0;
+				m=0;
+				while(recorrer != (ntohs(tramaip->tot_len) + 14)){
+					if (recorrer>=14)
+					{
+						auxbufferIP[m]=buffer[j][recorrer];
+						m++;
+					}
+					recorrer++;
+					
+				}
+				
                 memset(&source, 0, sizeof(source));
                 source.sin_addr.s_addr = tramaip->saddr;
                 
@@ -313,11 +354,11 @@ void analizador(struct datosUser *datosP){
                 printf("Hlen: %d\n",((unsigned int)tramaip->ihl)*4);
                 printf("Tipo de Servicio: %d\n",(unsigned int)tramaip->tos);
                 printf("Longitud Total: %d\n",ntohs(tramaip->tot_len));
+				conteoTamanio(ntohs(tramaip->tot_len));
                 printf("Identificacion: %d\n",ntohs(tramaip->id));
                 printf("Bandera y Dezplazamiento de Fragmentacion: 0x%04x\n",ntohs(tramaip->frag_off));
                 printf("Tiempo de vida: %d\n",(unsigned int)tramaip->ttl);
-                printf("Protocolo de Capa de superior: 0x%02x ",tramaip->protocol);
-                conteoProtocolIP(tramaip->protocol);//Contador de protocolos de capa superior
+                printf("Protocolo de Capa de superior: 0x%02x \n",tramaip->protocol);
                 printf("Checksum: %d\n",ntohs(tramaip->check));
                 printf("IP Fuente: %s\n",inet_ntoa(source.sin_addr));
                 printf("IP Destino: %s\n",inet_ntoa(dest.sin_addr));
@@ -327,11 +368,12 @@ void analizador(struct datosUser *datosP){
 				fprintf(Archivo,"---------Trama %d: ---------\n\n",j+1);
 				fprintf(Archivo,"IP Fuente: %s\n",inet_ntoa(source.sin_addr));
 				fprintf(Archivo,"IP Destino: %s\n",inet_ntoa(dest.sin_addr));
-				fprintf(Archivo,"Longitud de Cabecera: %d bytes",((unsigned int)tramaip->ihl)*4);
-				fprintf(Archivo,"Longitud Total del Datagrama IP: %d bytes",ntohs(tramaip->tot_len));
+				fprintf(Archivo,"Longitud de Cabecera: %d bytes\n",((unsigned int)tramaip->ihl)*4);
+				fprintf(Archivo,"Longitud Total del Datagrama IP: %d bytes\n",ntohs(tramaip->tot_len));
 				fprintf(Archivo,"Identificador: %d\n",ntohs(tramaip->id));
 				fprintf(Archivo,"Tiempo de vida: %d\n",(unsigned int)tramaip->ttl);
-				fprintf(Archivo,"Protocolo de Capa de superior: 0x%02x \n",tramaip->protocol);
+				fprintf(Archivo,"Protocolo de Capa de superior: 0x%02x ",tramaip->protocol);
+				conteoProtocolIP(tramaip->protocol);//Contador de protocolos de capa superior
 				fprintf(Archivo,"Longitud de carga util: %d\n",cargautilIP);
 				fprintf(Archivo,"Tipo de Servicio: %d\n",(unsigned int)tramaip->tos);
 				fprintf(Archivo,"Bandera y Dezplazamiento de Fragmentacion: 0x%04x\n",ntohs(tramaip->frag_off));
@@ -342,7 +384,7 @@ void analizador(struct datosUser *datosP){
 				//Se usa 0x1FFF = 0001 1111 1111 1111, cuando lo usamos en los if dentro del tercer if, es para revisar el valor que trae el fragmento (Primero o Intermedio)(Ya que se aprobo que tiene más fragmentos)
 				//Se usa 0x1FFF = 0001 1111 1111 1111, Se usa cuando se lee que ya es el ultimo fragmento, porque ya no viene bit de mas fragmentos pero viene un valor de donde contar.
 				if((ntohs(tramaip->frag_off) & 0x8000) > 0){
-					fprtinf(Archivo,"Bandera de bit reservado\n");
+					fprintf(Archivo,"Bandera de bit reservado\n");
 				}
 				else if ((ntohs(tramaip->frag_off) & 0x4000) > 0){
 					fprintf(Archivo,"Datagrama no se puede fragmentar\n");
@@ -353,7 +395,7 @@ void analizador(struct datosUser *datosP){
 					{
 						fprintf(Archivo,"Primer Fragmento\n");
 					}else{
-						fprintf(Archivo,"Fragmento Intermedio");
+						fprintf(Archivo,"Fragmento Intermedio\n");
 					}
 					
 				}else if((ntohs(tramaip->frag_off) & 0x1FFF) > 0){
@@ -363,8 +405,8 @@ void analizador(struct datosUser *datosP){
 					fprintf(Archivo,"Único Fragmento\n");
 				}
 
-				fprintf(Archivo,"Primer Byte del datagrama IP: %02x",buffer[j] + sizeof(struct ethhdr));
-				fprintf(Archivo,"Último Byte del datagrama IP: %02x",buffer[j] + sizeof(struct ethhdr) + ntohs(tramaip->tot_len)-1);
+				fprintf(Archivo,"Primer Byte del datagrama IP: %02x\n",auxbufferIP[0]);
+				fprintf(Archivo,"Último Byte del datagrama IP: %02x\n\n",auxbufferIP[m]);
 				
 				
 
@@ -383,8 +425,30 @@ void analizador(struct datosUser *datosP){
         printf("IPv6: %d\n",IPv6);
         printf("OSPF: %d\n",OSPF);
         printf("Otros: %d\n",otros);
+
+		fprintf(Archivo,"--------Conteo de Protocolos--------\n\n");
+        fprintf(Archivo,"ICMP: %d\n",ICMP);
+        fprintf(Archivo,"IGMP: %d\n",IGMP);
+        fprintf(Archivo,"IP: %d\n",IP);
+        fprintf(Archivo,"TCP: %d\n",TCP);
+        fprintf(Archivo,"UDP: %d\n",UDP);
+        fprintf(Archivo,"IPv6: %d\n",IPv6);
+        fprintf(Archivo,"OSPF: %d\n",OSPF);
+        fprintf(Archivo,"Otros: %d\n",otros);
         
+		printf("--------Conteo de Tamanios--------\n\n");
+        printf("Tramas de 0 - 159: %d\n",tamanio159);
+        printf("Tramas de 160 - 639: %d\n",tamanio639);
+        printf("Tramas de 640 - 1279: %d\n",tamanio1279);
+        printf("Tramas de 1280 - 5119: %d\n",tamanio5119);
+        printf("Tramas de 5120 o mayor: %d\n",tamaniomay);
         
+        fprintf(Archivo,"--------Conteo de Tamanios--------\n\n");
+        fprintf(Archivo,"Tramas de 0 - 159: %d\n",tamanio159);
+        fprintf(Archivo,"Tramas de 160 - 639: %d\n",tamanio639);
+        fprintf(Archivo,"Tramas de 640 - 1279: %d\n",tamanio1279);
+        fprintf(Archivo,"Tramas de 1280 - 5119: %d\n",tamanio5119);
+        fprintf(Archivo,"Tramas de 5120 o mayor: %d\n",tamaniomay);
 		
 	}
 
