@@ -17,6 +17,22 @@
 //Nombre de adaptador wlp2s0
 #define MAXLINE 65536  //Tamaño maximo de trama
 
+//Estructura para guardar los datos que mete el usuario
+typedef struct datosUser{
+	int	num_paquetes;
+	char nom_de_adaptador[10];
+}datosUser;
+
+//Estructura para contar paquetes por cada direccion IP
+typedef struct userIP{
+	char direccion_1[16];
+	char direccion_2[16];
+	int paquetes_recibidos;
+	int paquetes_enviados;
+
+	struct userIP *apSiguiente;
+	
+}userIP;
 
 //Variable Global a la que accederan ambos Hilos
 
@@ -50,25 +66,14 @@ int lectura_buffer = 1;		//Simula semaforo de procesos
 	int tamanio5119=0;
 	int tamaniomay=0;
 
-//Estructura para contar paquetes por cada direccion IP
-typedef struct userIP{
-	char direccion_origen[16];
-	char direccion_Destino[16];
-	int paquetes_recibidos;
-	int paquetes_enviados;
-
-	struct snifferIP *apSiguiente;
-	
-}userIP;
-
+//Variables para contar paquetes en direcciones IP
+userIP *conteoPaqUserIP=NULL;
+//Variable para contar conversaciones en IP
+userIP *conversacionesUserIP=NULL;
 //Archivo para guardar los datos
 FILE *Archivo;
 
-//Estructura para guardar los datos que mete el usuario
-typedef struct datosUser{
-	int	num_paquetes;
-	char nom_de_adaptador[10];
-}datosUser;
+
 
 
 
@@ -208,6 +213,162 @@ void conteoTamanio(int longitudTotal){
 	}
 }
 
+//Insertar Nodo
+userIP *crearNodo(const char *direccion1,const char *direccion2){
+	userIP *NuevoNodo;
+	int i=0;
+	
+	NuevoNodo = (userIP*)malloc(sizeof(userIP));
+	if(NuevoNodo == NULL){
+		printf("No se creo nodo UserIP\n\n");
+	}
+	else{
+		strcpy(NuevoNodo->direccion_1,direccion1);
+		strcpy(NuevoNodo->direccion_2,direccion2);
+		NuevoNodo->apSiguiente = NULL;
+	}
+	return NuevoNodo;
+
+}
+//Funcion para contar paquetes destino y fuente.
+userIP *conteodireccionIP(userIP *Inicio, char *direccionorig, char *direcciondest){
+
+	userIP *nodoAux=NULL;
+	userIP *nodoRecorre=NULL;
+	int control = 0;
+
+	if(Inicio == NULL){
+		nodoAux = crearNodo(direccionorig,"NA");
+		nodoAux->paquetes_enviados=1;
+
+		Inicio = nodoAux;
+
+		nodoAux = crearNodo(direcciondest,"NA");
+		nodoAux->paquetes_recibidos=1;
+
+		Inicio->apSiguiente = nodoAux;
+	}
+	else{
+
+		//Area de trabajo con direccionOrigen
+		nodoRecorre = Inicio;
+		while (nodoRecorre != NULL && control == 0)
+		{
+			if(strcmp(nodoRecorre->direccion_1,direccionorig) == 0){
+				nodoRecorre->paquetes_enviados ++;
+				control = 1;
+			}
+			nodoRecorre = nodoRecorre->apSiguiente;
+		}
+		nodoRecorre = Inicio;
+		if (control == 0) //Si control fue 0 y se recorrio completo es que no habia dirección que comparar, entonces se ingresa un nuevo elemento a la estructura
+		{
+			while (nodoRecorre->apSiguiente != NULL)
+			{
+				nodoRecorre = nodoRecorre->apSiguiente;
+			}
+			nodoAux = crearNodo(direccionorig,"NA");
+			nodoAux->paquetes_enviados=1;
+			
+			nodoRecorre->apSiguiente = nodoAux;
+		}
+		
+		//Area de trabajo con direccion destino
+		nodoRecorre = Inicio;
+		control = 0;
+		while (nodoRecorre != NULL && control == 0)
+		{
+			if(strcmp(nodoRecorre->direccion_1,direcciondest) == 0){
+				nodoRecorre->paquetes_recibidos ++;
+				control = 1;
+			}
+			nodoRecorre = nodoRecorre->apSiguiente;
+		}
+		nodoRecorre = Inicio;
+		if (control == 0)
+		{
+			while (nodoRecorre->apSiguiente != NULL)
+			{
+				nodoRecorre = nodoRecorre->apSiguiente;
+			}
+			nodoAux = crearNodo(direcciondest,"NA");
+			nodoAux->paquetes_recibidos=1;
+			
+			nodoRecorre->apSiguiente = nodoAux;
+		}
+
+		
+	}
+	return Inicio;
+}
+//Funcion para imprimir paquetes enviados y recibidos de una IP
+void impresionEnviadosRecibidosIP(userIP *Inicio){
+
+	userIP *apRecorre=Inicio;
+
+	printf("-----------------Estadistica 1-----------------\n\n");
+	while (apRecorre != NULL)
+	{
+		printf("Dirección IP: %s\n",apRecorre->direccion_1);
+		printf("No. Paquetes Enviados: %d\n",apRecorre->paquetes_enviados);
+		printf("No. Paquetes Recibidos: %d\n\n",apRecorre->paquetes_recibidos);
+		
+		apRecorre = apRecorre->apSiguiente;
+	}
+	
+}
+//Funcion para contar las conversaciones
+userIP *conteoConversaciones(userIP *Inicio, char *direccionorigen, char *direcciondestino){
+	userIP *apRecorre = NULL;
+	userIP *apAux = NULL;
+	int control = 0;
+
+	if(Inicio == NULL){
+		apAux = crearNodo(direccionorigen,direcciondestino);
+		apAux->paquetes_enviados=1;
+		Inicio = apAux;
+	}
+	else{
+		apRecorre = Inicio;
+		while(apRecorre != NULL && control == 0){
+			if( (strcmp(apRecorre->direccion_1,direccionorigen) == 0) && (strcmp(apRecorre->direccion_2,direcciondestino) == 0)){
+				apRecorre->paquetes_enviados++;
+				control = 1;
+			}
+			else if ((strcmp(apRecorre->direccion_1,direcciondestino) == 0) && (strcmp(apRecorre->direccion_2,direccionorigen) == 0)){
+				apRecorre->paquetes_enviados++;
+				control = 1;
+			}
+		}
+		apRecorre = Inicio;
+		if (control == 0)
+		{
+			while (apRecorre->apSiguiente != NULL)
+			{
+				apRecorre = apRecorre->apSiguiente;
+			}
+			apAux = crearNodo(direccionorigen,direcciondestino);
+			apAux->paquetes_enviados=1;
+			apRecorre->apSiguiente = apAux;
+		}
+		
+	}
+	return Inicio;
+
+}
+void impresionConversaciones(userIP *Inicio){
+	userIP *apRecorre = Inicio;
+
+	printf("------------------------Estadistica de Conversaciones------------------------\n\n");
+
+	while (apRecorre != NULL)
+	{
+		printf("Conversacion entre:\n (%s) y\n (%s)\n",apRecorre->direccion_1,apRecorre->direccion_2);
+		printf("Tiene %d mensajes entre si\n\n",apRecorre->paquetes_enviados);
+		apRecorre = apRecorre->apSiguiente;
+	}
+	
+}
 
 //Funcion que estara Capturando los Datos
 void capturador(struct datosUser *datosP){
@@ -277,7 +438,8 @@ void analizador(struct datosUser *datosP){
 	int cargautilIP=0;
 	int recorrer=0;
 	int m=0;
-	
+	char auxdirec1[16];
+	char auxdirec2[16];
 
 	
 	Archivo = fopen("sniffer.txt","a+");
@@ -348,7 +510,7 @@ void analizador(struct datosUser *datosP){
                 
                 memset(&dest, 0, sizeof(dest));
                 dest.sin_addr.s_addr = tramaip->daddr;
-
+				//Impresion en Consola
                 printf("---------Trama %d: ---------\n\n",j+1);
                 printf("Version: %d\n",(unsigned int)tramaip->version);
                 printf("Hlen: %d\n",((unsigned int)tramaip->ihl)*4);
@@ -362,9 +524,24 @@ void analizador(struct datosUser *datosP){
                 printf("Checksum: %d\n",ntohs(tramaip->check));
                 printf("IP Fuente: %s\n",inet_ntoa(source.sin_addr));
                 printf("IP Destino: %s\n",inet_ntoa(dest.sin_addr));
-                
+                //Calculo de carga Util
 				cargautilIP = ntohs(tramaip->tot_len) - (((unsigned int)tramaip->ihl)*4);
-				
+				//Calculo de estadistica IP
+				sprintf(auxdirec1,"%s",inet_ntoa(source.sin_addr));
+				sprintf(auxdirec2,"%s",inet_ntoa(dest.sin_addr));
+
+				conteoPaqUserIP = conteodireccionIP(conteoPaqUserIP,auxdirec1,auxdirec2);
+				conversacionesUserIP = conteoConversaciones(conversacionesUserIP,auxdirec1,auxdirec2);
+				/*
+				printf("Direccion origen: %s\n",conteoPaqUserIP->direccion_1);
+				printf("Direccion destino: %s\n",conteoPaqUserIP->direccion_2);
+				printf("Paquetes: %d\n\n",conteoPaqUserIP->paquetes_enviados);
+
+				printf("Direccion origen: %s\n",conversacionesUserIP->direccion_1);
+				printf("Direccion destino: %s\n",conversacionesUserIP->direccion_2);
+				printf("Paquetes: %d\n\n",conversacionesUserIP->paquetes_enviados);
+				*/
+				//Impresion de Archivo
 				fprintf(Archivo,"---------Trama %d: ---------\n\n",j+1);
 				fprintf(Archivo,"IP Fuente: %s\n",inet_ntoa(source.sin_addr));
 				fprintf(Archivo,"IP Destino: %s\n",inet_ntoa(dest.sin_addr));
@@ -435,6 +612,9 @@ void analizador(struct datosUser *datosP){
         fprintf(Archivo,"IPv6: %d\n",IPv6);
         fprintf(Archivo,"OSPF: %d\n",OSPF);
         fprintf(Archivo,"Otros: %d\n",otros);
+
+		impresionEnviadosRecibidosIP(conteoPaqUserIP);
+		impresionConversaciones(conversacionesUserIP);
         
 		printf("--------Conteo de Tamanios--------\n\n");
         printf("Tramas de 0 - 159: %d\n",tamanio159);
