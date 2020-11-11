@@ -43,6 +43,20 @@ int lectura_buffer = 1;		//Simula semaforo de procesos
     int OSPF=0;
     int otros=0;
 
+// Variables para contar tamaños
+	int tamanio159=0;
+	int tamanio639=0;
+	int tamanio1279=0;
+	int tamanio5119=0;
+	int tamaniomay=0;
+
+//Estructura para contar paquetes por cada direccion IP
+typedef struct userIP{
+	
+	int paquetes_recibidos;
+	int paquetes_enviados;
+}
+
 //Archivo para guardar los datos
 FILE *Archivo;
 
@@ -52,10 +66,6 @@ typedef struct datosUser{
 	char nom_de_adaptador[10];
 }datosUser;
 
-typedef struct cont_direcc{
-	char direc[18];
-	int n;
-}cont_direcc;
 
 
 //Funciones extra para el analizador
@@ -131,37 +141,36 @@ void IdProtocolo (uint16_t proto, int tipo){
 }
 
 //FUncion para revisar los protocolos de capa superior en la cabecera IPv4
-void conteoProtocolIP(unsigned char* buffer)
+void conteoProtocolIP(uint8_t protocolo)
 {
 	//Get the IP Header part of this packet
-	struct iphdr *iph = (struct iphdr*)buffer;
-	switch (htons(iph->protocol)) //Check the Protocol and do accordingly...
+	switch (protocolo) //Check the Protocol and do accordingly...
 	{
-		case 256:  //ICMP Protocol
+		case 1:  //ICMP Protocol
 			ICMP++;
 			printf("Protocol ICMP\n");
 			break;
-		case 512:  //IGMP Protocol
+		case 2:  //IGMP Protocol
 			IGMP++;
             printf("Protocol IGMP\n");
 			break;
-		case 1024: //IP Protocol
+		case 4: //IP Protocol
             IP++;
             printf("Protocol IP\n");
             break;
-		case 1536:  //TCP Protocol
+		case 6:  //TCP Protocol
 			TCP++;
             printf("Protocol TCP\n");
 			break;
-		case 4352: //UDP Protocol
+		case 17: //UDP Protocol
 			UDP++;
             printf("Protocol UDP\n");
 			break;
-		case 10496: //IPv6 Protocol
+		case 41: //IPv6 Protocol
             IPv6++;
             printf("Protocol IPv6\n");
             break;
-        case 22784:   //OSPF Protocol
+        case 89:   //OSPF Protocol
             OSPF++;
             printf("Protocol OSPF\n");
             break;
@@ -241,6 +250,7 @@ void analizador(struct datosUser *datosP){
 	int num802=0;
 	int ethernetII=datosP->num_paquetes;
     char auxbuffer[MAXLINE];//Buffer de ayuda momentaneo
+	int cargautilIP=0;
 	
 
 	
@@ -298,21 +308,67 @@ void analizador(struct datosUser *datosP){
                 memset(&dest, 0, sizeof(dest));
                 dest.sin_addr.s_addr = tramaip->daddr;
 
-                //tramaip->version = htons(tramaip->version);
                 printf("---------Trama %d: ---------\n\n",j+1);
                 printf("Version: %d\n",(unsigned int)tramaip->version);
                 printf("Hlen: %d\n",((unsigned int)tramaip->ihl)*4);
                 printf("Tipo de Servicio: %d\n",(unsigned int)tramaip->tos);
                 printf("Longitud Total: %d\n",ntohs(tramaip->tot_len));
                 printf("Identificacion: %d\n",ntohs(tramaip->id));
-                printf("Bandera y Dezplazamiento de Fragmentacion: %d\n",(unsigned int)tramaip->frag_off);
+                printf("Bandera y Dezplazamiento de Fragmentacion: 0x%04x\n",ntohs(tramaip->frag_off));
                 printf("Tiempo de vida: %d\n",(unsigned int)tramaip->ttl);
-                printf("Protocolo de Capa de superior: %d ",tramaip->protocol);
-                conteoProtocolIP(buffer[j]);//Contador de protocolos de capa superior
+                printf("Protocolo de Capa de superior: 0x%02x ",tramaip->protocol);
+                conteoProtocolIP(tramaip->protocol);//Contador de protocolos de capa superior
                 printf("Checksum: %d\n",ntohs(tramaip->check));
                 printf("IP Fuente: %s\n",inet_ntoa(source.sin_addr));
                 printf("IP Destino: %s\n",inet_ntoa(dest.sin_addr));
                 
+				cargautilIP = ntohs(tramaip->tot_len) - (((unsigned int)tramaip->ihl)*4);
+				
+				fprintf(Archivo,"---------Trama %d: ---------\n\n",j+1);
+				fprintf(Archivo,"IP Fuente: %s\n",inet_ntoa(source.sin_addr));
+				fprintf(Archivo,"IP Destino: %s\n",inet_ntoa(dest.sin_addr));
+				fprintf(Archivo,"Longitud de Cabecera: %d bytes",((unsigned int)tramaip->ihl)*4);
+				fprintf(Archivo,"Longitud Total del Datagrama IP: %d bytes",ntohs(tramaip->tot_len));
+				fprintf(Archivo,"Identificador: %d\n",ntohs(tramaip->id));
+				fprintf(Archivo,"Tiempo de vida: %d\n",(unsigned int)tramaip->ttl);
+				fprintf(Archivo,"Protocolo de Capa de superior: 0x%02x \n",tramaip->protocol);
+				fprintf(Archivo,"Longitud de carga util: %d\n",cargautilIP);
+				fprintf(Archivo,"Tipo de Servicio: %d\n",(unsigned int)tramaip->tos);
+				fprintf(Archivo,"Bandera y Dezplazamiento de Fragmentacion: 0x%04x\n",ntohs(tramaip->frag_off));
+				//Mascara al segmento de banderas (3 bits mas significativos de los 16 de la variable) 
+				//Se usa 0x8000 = 1000 0000 0000 0000, bit reservado
+				//Se usa 0x4000 = 0100 0000 0000 0000, bit reservado
+				//Se usa 0x2000 = 0010 0000 0000 0000, bit reservado
+				//Se usa 0x1FFF = 0001 1111 1111 1111, cuando lo usamos en los if dentro del tercer if, es para revisar el valor que trae el fragmento (Primero o Intermedio)(Ya que se aprobo que tiene más fragmentos)
+				//Se usa 0x1FFF = 0001 1111 1111 1111, Se usa cuando se lee que ya es el ultimo fragmento, porque ya no viene bit de mas fragmentos pero viene un valor de donde contar.
+				if((ntohs(tramaip->frag_off) & 0x8000) > 0){
+					fprtinf(Archivo,"Bandera de bit reservado\n");
+				}
+				else if ((ntohs(tramaip->frag_off) & 0x4000) > 0){
+					fprintf(Archivo,"Datagrama no se puede fragmentar\n");
+				}
+				else if ((ntohs(tramaip->frag_off) & 0x2000) > 0){
+					fprintf(Archivo,"Más Fragmentos... \n");
+					if ((ntohs(tramaip->frag_off) & 0x1FFF) == 0)
+					{
+						fprintf(Archivo,"Primer Fragmento\n");
+					}else{
+						fprintf(Archivo,"Fragmento Intermedio");
+					}
+					
+				}else if((ntohs(tramaip->frag_off) & 0x1FFF) > 0){
+					fprintf(Archivo,"Ultimo Fragmento\n");
+				}
+				else{
+					fprintf(Archivo,"Único Fragmento\n");
+				}
+
+				fprintf(Archivo,"Primer Byte del datagrama IP: %02x",buffer[j] + sizeof(struct ethhdr));
+				fprintf(Archivo,"Último Byte del datagrama IP: %02x",buffer[j] + sizeof(struct ethhdr) + ntohs(tramaip->tot_len)-1);
+				
+				
+
+
             }
             j++;
             
