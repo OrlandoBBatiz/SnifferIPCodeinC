@@ -252,6 +252,7 @@ userIP *conteodireccionIP(userIP *Inicio, char *direccionorig, char *direccionde
 
 		//Area de trabajo con direccionOrigen
 		nodoRecorre = Inicio;
+		control = 0;
 		while (nodoRecorre != NULL && control == 0)
 		{
 			if(strcmp(nodoRecorre->direccion_1,direccionorig) == 0){
@@ -327,6 +328,8 @@ userIP *conteoConversaciones(userIP *Inicio, char *direccionorigen, char *direcc
 		apAux = crearNodo(direccionorigen,direcciondestino);
 		apAux->paquetes_enviados=1;
 		Inicio = apAux;
+
+		return Inicio;
 	}
 	else{
 		apRecorre = Inicio;
@@ -339,6 +342,7 @@ userIP *conteoConversaciones(userIP *Inicio, char *direccionorigen, char *direcc
 				apRecorre->paquetes_enviados++;
 				control = 1;
 			}
+			apRecorre = apRecorre->apSiguiente;
 		}
 		apRecorre = Inicio;
 		if (control == 0)
