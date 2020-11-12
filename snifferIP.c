@@ -39,7 +39,7 @@ typedef struct userIP{
 
 char buffer[2000][MAXLINE]; //Es el buffer donde guardare los paquetes IP, puedo recibir hasta 2000.
 int tamanios[2000];
-int lectura_buffer = 1;		//Simula semaforo de procesos
+int lectura_buffer = 1;		//Simula semaforo de hilos
 //Variables para conteo de protocolos en Trama Ethernet
 	int nipv4=0;
 	int nipv6=0;
@@ -308,11 +308,17 @@ void impresionEnviadosRecibidosIP(userIP *Inicio){
 	userIP *apRecorre=Inicio;
 
 	printf("-----------------Estadistica 1-----------------\n\n");
+	fprintf(Archivo,"-----------------Estadistica 1-----------------\n\n");
 	while (apRecorre != NULL)
 	{
+
 		printf("Dirección IP: %s\n",apRecorre->direccion_1);
 		printf("No. Paquetes Enviados: %d\n",apRecorre->paquetes_enviados);
 		printf("No. Paquetes Recibidos: %d\n\n",apRecorre->paquetes_recibidos);
+
+		fprintf(Archivo,"Dirección IP: %s\n",apRecorre->direccion_1);
+		fprintf(Archivo,"No. Paquetes Enviados: %d\n",apRecorre->paquetes_enviados);
+		fprintf(Archivo,"No. Paquetes Recibidos: %d\n\n",apRecorre->paquetes_recibidos);
 		
 		apRecorre = apRecorre->apSiguiente;
 	}
@@ -363,12 +369,17 @@ userIP *conteoConversaciones(userIP *Inicio, char *direccionorigen, char *direcc
 void impresionConversaciones(userIP *Inicio){
 	userIP *apRecorre = Inicio;
 
-	printf("------------------------Estadistica de Conversaciones------------------------\n\n");
+	printf("---------Estadistica de Conversaciones---------\n\n");
+	fprintf(Archivo,"---------Estadistica de Conversaciones---------\n\n");
 
 	while (apRecorre != NULL)
 	{
 		printf("Conversacion entre:\n (%s) y\n (%s)\n",apRecorre->direccion_1,apRecorre->direccion_2);
 		printf("Tiene %d mensajes entre si\n\n",apRecorre->paquetes_enviados);
+
+		fprintf(Archivo,"Conversacion entre:\n (%s) y\n (%s)\n",apRecorre->direccion_1,apRecorre->direccion_2);
+		fprintf(Archivo,"Tiene %d mensajes entre si\n\n",apRecorre->paquetes_enviados);
+
 		apRecorre = apRecorre->apSiguiente;
 	}
 	
@@ -430,6 +441,7 @@ void analizador(struct datosUser *datosP){
 	struct ethhdr *ethernet_header;
     struct iphdr *tramaip; //Estructura donde tiene VER, HLEN, TIPO, Longitud Total y mas...
     struct sockaddr_in source,dest; //Estructura para mis variables de fuente y destino
+	//Variables para trama ethernet
 	int size_trama=0;
 	char direccion_dest[18];
 	char aux_dest[9];
@@ -438,6 +450,7 @@ void analizador(struct datosUser *datosP){
 	uint16_t protocolo;
 	int num802=0;
 	int ethernetII=datosP->num_paquetes;
+	//Variable para trama IP
     char auxbufferIP[MAXLINE];//Buffer de ayuda momentaneo
 	int cargautilIP=0;
 	int recorrer=0;
@@ -462,7 +475,7 @@ void analizador(struct datosUser *datosP){
 		fprintf(Archivo,"Num. de tramas leídas: %d\n\n",datosP->num_paquetes);
 		fprintf(Archivo,"Tramas Ethernet II: %d\n\n",ethernetII);
 		j=0;
-		//Analizador para conteo de Tramas
+		//Analizo cuales son tramas  IPv4
 		while(j < (datosP->num_paquetes)){
 
 			if(tamanios[j]>45){
@@ -536,15 +549,7 @@ void analizador(struct datosUser *datosP){
 
 				conteoPaqUserIP = conteodireccionIP(conteoPaqUserIP,auxdirec1,auxdirec2);
 				conversacionesUserIP = conteoConversaciones(conversacionesUserIP,auxdirec1,auxdirec2);
-				/*
-				printf("Direccion origen: %s\n",conteoPaqUserIP->direccion_1);
-				printf("Direccion destino: %s\n",conteoPaqUserIP->direccion_2);
-				printf("Paquetes: %d\n\n",conteoPaqUserIP->paquetes_enviados);
-
-				printf("Direccion origen: %s\n",conversacionesUserIP->direccion_1);
-				printf("Direccion destino: %s\n",conversacionesUserIP->direccion_2);
-				printf("Paquetes: %d\n\n",conversacionesUserIP->paquetes_enviados);
-				*/
+			
 				//Impresion de Archivo
 				fprintf(Archivo,"---------Trama %d: ---------\n\n",j+1);
 				fprintf(Archivo,"IP Fuente: %s\n",inet_ntoa(source.sin_addr));
@@ -552,14 +557,14 @@ void analizador(struct datosUser *datosP){
 				fprintf(Archivo,"Longitud de Cabecera: %d bytes\n",((unsigned int)tramaip->ihl)*4);
 				fprintf(Archivo,"Longitud Total del Datagrama IP: %d bytes\n",ntohs(tramaip->tot_len));
 				fprintf(Archivo,"Identificador: %d\n",ntohs(tramaip->id));
-				fprintf(Archivo,"Tiempo de vida: %d\n",(unsigned int)tramaip->ttl);
+				fprintf(Archivo,"Tiempo de vida: %d saltos\n",(unsigned int)tramaip->ttl);
 				fprintf(Archivo,"Protocolo de Capa de superior: 0x%02x ",tramaip->protocol);
 				conteoProtocolIP(tramaip->protocol);//Contador de protocolos de capa superior
 				fprintf(Archivo,"Longitud de carga util: %d\n",cargautilIP);
 				fprintf(Archivo,"Tipo de Servicio: %d\n",(unsigned int)tramaip->tos);
 				fprintf(Archivo,"Bandera y Dezplazamiento de Fragmentacion: 0x%04x\n",ntohs(tramaip->frag_off));
 				//Mascara al segmento de banderas (3 bits mas significativos de los 16 de la variable) 
-				//Se usa 0x8000 = 1000 0000 0000 0000, bit reservado
+				//Se usa 0x8000 = 1000 000000 00 0000, bit reservado
 				//Se usa 0x4000 = 0100 0000 0000 0000, bit reservado
 				//Se usa 0x2000 = 0010 0000 0000 0000, bit reservado
 				//Se usa 0x1FFF = 0001 1111 1111 1111, cuando lo usamos en los if dentro del tercer if, es para revisar el valor que trae el fragmento (Primero o Intermedio)(Ya que se aprobo que tiene más fragmentos)
